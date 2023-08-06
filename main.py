@@ -3,6 +3,7 @@ import curses
 import time
 import random
 
+from itertools import cycle
 from curses_tools import draw_frame, read_controls, get_frame_size
 
 
@@ -109,18 +110,12 @@ def control_starship(canvas, current_row, current_column, frame):
 
 
 async def animate_spaceship(canvas, current_row, current_column):
-    frame_1, frame_2 = get_starship_frames()
-    while True:
-
-        draw_frame(canvas, current_row, current_column, frame_1)
-        await asyncio.sleep(0)
-        draw_frame(canvas, current_row, current_column, frame_1, negative=True)
-
-        draw_frame(canvas, current_row, current_column, frame_2)
+    for frame in cycle(get_starship_frames()):
+        draw_frame(canvas, current_row, current_column, frame)
         await asyncio.sleep(0)
 
-        new_row, new_column = control_starship(canvas, current_row, current_column, frame_1)
-        draw_frame(canvas, current_row, current_column, frame_2, negative=True)
+        new_row, new_column = control_starship(canvas, current_row, current_column, frame)
+        draw_frame(canvas, current_row, current_column, frame, negative=True)
         current_row, current_column = new_row, new_column
 
 
