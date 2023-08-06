@@ -1,12 +1,15 @@
-import time
-import curses
 import asyncio
+import curses
+import time
 import random
-from itertools import cycle
+
 from curses_tools import draw_frame, read_controls, get_frame_size
 
 
 TIC_TIMEOUT = 0.1
+ROW_SPEED = 5
+COLUMN_SPEED = 5
+STARS_COUNT = 500
 
 
 class EventLoopCommand():
@@ -38,7 +41,7 @@ def read_file(filepath):
         return my_file.read()
 
 
-def get_starships():
+def get_starship_frames():
     rocket_frame_1 = read_file("frames/rocket_frame_1.txt")
     rocket_frame_2 = read_file("frames/rocket_frame_2.txt")
     return rocket_frame_1, rocket_frame_2
@@ -90,20 +93,35 @@ async def fire(canvas, start_row, start_column, rows_speed=-0.3, columns_speed=0
         column += columns_speed
 
 
-async def animate_spaceship(canvas, row, column):
-    frames = get_starships()
-    for frame in cycle(frames):
+def control_starship(canvas, current_row, current_column, frame):
+    rows_direction, columns_direction, space_pressed = read_controls(canvas)
+    frame_row, frame_column = get_frame_size(frame)
+    max_rows, max_columns = canvas.getmaxyx()
 
-        draw_frame(canvas, row, column, frame, negative=True)
+    new_row = current_row + rows_direction * ROW_SPEED
+    new_column = current_column + columns_direction * COLUMN_SPEED
+
+    if new_row <= 0 or new_row + frame_row >= max_rows:
+        new_row = current_row
+    if new_column <= 0 or new_column + frame_column >= max_columns:
+        new_column = current_column
+    return new_row, new_column
+
+
+async def animate_spaceship(canvas, current_row, current_column):
+    frame_1, frame_2 = get_starship_frames()
+    while True:
+
+        draw_frame(canvas, current_row, current_column, frame_1)
         await asyncio.sleep(0)
-        draw_frame(canvas, row, column, frame)
+        draw_frame(canvas, current_row, current_column, frame_1, negative=True)
 
-        rows_direction, columns_direction, space_pressed = read_controls(canvas)
-        draw_frame(canvas, row, column, frame, negative=True)
+        draw_frame(canvas, current_row, current_column, frame_2)
+        await asyncio.sleep(0)
 
-        new_row = row + rows_direction
-        new_column = column + columns_direction
-        row, column = new_row, new_column
+        new_row, new_column = control_starship(canvas, current_row, current_column, frame_1)
+        draw_frame(canvas, current_row, current_column, frame_2, negative=True)
+        current_row, current_column = new_row, new_column
 
 
 def draw(canvas):
@@ -111,10 +129,9 @@ def draw(canvas):
     canvas.border()
     canvas.nodelay(True)
     max_x, max_y = curses.window.getmaxyx(canvas)
-    stars_count = 500
 
     coroutines = []
-    coroutines.extend([blink(canvas, *get_random_xy(max_x, max_y), get_random_star()) for _ in range(stars_count)])
+    coroutines.extend([blink(canvas, *get_random_xy(max_x, max_y), get_random_star()) for _ in range(STARS_COUNT)])
     coroutines.extend([animate_spaceship(canvas, *get_center_xy(max_x, max_y))])
 
     while coroutines:
