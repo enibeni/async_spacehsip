@@ -110,7 +110,7 @@ def control_starship(canvas, current_row, current_column, frame):
 
 
 async def animate_spaceship(canvas, current_row, current_column):
-    for frame in cycle(get_starship_frames()):
+    for frame in cycle(item for item in get_starship_frames() for _ in range(2)):
         draw_frame(canvas, current_row, current_column, frame)
         await asyncio.sleep(0)
 
