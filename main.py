@@ -6,6 +6,7 @@ import random
 
 from itertools import cycle
 from curses_tools import draw_frame, read_controls, get_frame_size
+from physics import update_speed
 
 
 TIC_TIMEOUT = 0.1
@@ -125,11 +126,15 @@ async def fire(canvas, start_row, start_column, rows_speed=-0.3, columns_speed=0
 
 def control_starship(canvas, current_row, current_column, frame):
     rows_direction, columns_direction, space_pressed = read_controls(canvas)
+
     frame_row, frame_column = get_frame_size(frame)
     max_rows, max_columns = canvas.getmaxyx()
 
-    new_row = current_row + rows_direction * ROW_SPEED
-    new_column = current_column + columns_direction * COLUMN_SPEED
+    row_speed = column_speed = 0
+    row_speed, column_speed = update_speed(row_speed, column_speed, rows_direction, columns_direction)
+
+    new_row = current_row + rows_direction + row_speed #* ROW_SPEED
+    new_column = current_column + columns_direction + column_speed #* COLUMN_SPEED
 
     if new_row <= 0 or new_row + frame_row >= max_rows:
         new_row = current_row
