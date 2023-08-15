@@ -7,6 +7,7 @@ import random
 from itertools import cycle
 from curses_tools import draw_frame, read_controls, get_frame_size
 from physics import update_speed
+from obstacles import Obstacle, show_obstacles
 
 
 TIC_TIMEOUT = 0.1
@@ -14,6 +15,7 @@ ROW_SPEED = 5
 COLUMN_SPEED = 5
 STARS_COUNT = 50
 COROUTINES = []
+OBSTACLES = []
 
 
 class EventLoopCommand():
@@ -133,14 +135,14 @@ def control_starship(canvas, current_row, current_column, frame):
     row_speed = column_speed = 0
     row_speed, column_speed = update_speed(row_speed, column_speed, rows_direction, columns_direction)
 
-    new_row = current_row + rows_direction + row_speed #* ROW_SPEED
-    new_column = current_column + columns_direction + column_speed #* COLUMN_SPEED
+    new_row = current_row + (rows_direction + row_speed) * ROW_SPEED
+    new_column = current_column + (columns_direction + column_speed) * COLUMN_SPEED
 
     if new_row <= 0 or new_row + frame_row >= max_rows:
         new_row = current_row
     if new_column <= 0 or new_column + frame_column >= max_columns:
         new_column = current_column
-    return new_row, new_column
+    return new_row, new_column, space_pressed
 
 
 async def animate_spaceship(canvas, current_row, current_column):
@@ -148,13 +150,20 @@ async def animate_spaceship(canvas, current_row, current_column):
         draw_frame(canvas, current_row, current_column, frame)
         await asyncio.sleep(0)
 
-        new_row, new_column = control_starship(canvas, current_row, current_column, frame)
+        new_row, new_column, space_pressed = control_starship(canvas, current_row, current_column, frame)
         draw_frame(canvas, current_row, current_column, frame, negative=True)
         current_row, current_column = new_row, new_column
+
+        if space_pressed:
+            _, colum_size = get_frame_size(frame)
+            ship_columns_center = int(colum_size / 2)
+            COROUTINES.extend(
+                [fire(canvas, start_row=current_row, start_column=current_column + ship_columns_center, rows_speed=-2)])
 
 
 async def fly_garbage(canvas, column, garbage_frame, speed=0.5):
     """Animate garbage, flying from top to bottom. Сolumn position will stay same, as specified on start."""
+    global OBSTACLES
     rows_number, columns_number = canvas.getmaxyx()
 
     column = max(column, 0)
@@ -162,11 +171,20 @@ async def fly_garbage(canvas, column, garbage_frame, speed=0.5):
 
     row = 0
 
-    while row < rows_number:
-        draw_frame(canvas, row, column, garbage_frame)
-        await asyncio.sleep(0)
-        draw_frame(canvas, row, column, garbage_frame, negative=True)
-        row += speed
+    obstacle_row_size, obstacle_column_size = get_frame_size(garbage_frame)
+    garbage_obstacle_frame = Obstacle(row, column, obstacle_row_size, obstacle_column_size)
+
+    try:
+        OBSTACLES.append(garbage_obstacle_frame)
+
+        while row < rows_number:
+            draw_frame(canvas, row, column, garbage_frame)
+            await asyncio.sleep(0)
+            draw_frame(canvas, row, column, garbage_frame, negative=True)
+            garbage_obstacle_frame.row += speed
+            row += speed
+    finally:
+        OBSTACLES.remove(garbage_obstacle_frame)
 
 
 async def fill_orbit_with_garbage(canvas):
@@ -176,6 +194,7 @@ async def fill_orbit_with_garbage(canvas):
         column = get_random_column(max_y)
         garbage_frame = random.choice(garbage_frames)
         COROUTINES.extend([fly_garbage(canvas, column=column, garbage_frame=garbage_frame)])
+        COROUTINES.extend([show_obstacles(canvas, OBSTACLES)])
 
         await sleep(tics=5)
 
