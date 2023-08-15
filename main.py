@@ -7,7 +7,7 @@ import random
 from itertools import cycle
 from curses_tools import draw_frame, read_controls, get_frame_size
 from physics import update_speed
-from obstacles import Obstacle, show_obstacles
+from obstacles import Obstacle, show_obstacles, has_collision
 
 
 TIC_TIMEOUT = 0.1
@@ -98,6 +98,7 @@ async def blink(canvas, row, column, symbol='*'):
 
 async def fire(canvas, start_row, start_column, rows_speed=-0.3, columns_speed=0):
     """Display animation of gun shot, direction and speed can be specified."""
+    global OBSTACLES
 
     row, column = start_row, start_column
 
@@ -119,6 +120,11 @@ async def fire(canvas, start_row, start_column, rows_speed=-0.3, columns_speed=0
     curses.beep()
 
     while 0 < row < max_row and 0 < column < max_column:
+
+        for obstacle in OBSTACLES:
+            if obstacle.has_collision(row, column):
+                return
+
         canvas.addstr(round(row), round(column), symbol)
         await asyncio.sleep(0)
         canvas.addstr(round(row), round(column), ' ')
