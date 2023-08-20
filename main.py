@@ -7,8 +7,9 @@ import random
 from itertools import cycle
 from curses_tools import draw_frame, read_controls, get_frame_size
 from physics import update_speed
-from obstacles import Obstacle, show_obstacles, has_collision
+from obstacles import Obstacle
 from explosion import explode
+from game_scenario import get_garbage_delay_tics, PHRASES
 
 
 TIC_TIMEOUT = 0.1
@@ -18,6 +19,8 @@ STARS_COUNT = 50
 COROUTINES = []
 OBSTACLES = []
 OBSTACLES_IN_LAST_COLLISIONS = []
+YEAR = 1957
+GAME_OVER = False
 
 
 class EventLoopCommand():
@@ -72,22 +75,31 @@ def get_starship_frames():
     return rocket_frame_1, rocket_frame_2
 
 
+def get_game_over_frame():
+    game_over_frame = read_file("frames/game_over.txt")
+    return game_over_frame
+
+
 def get_garbage_frames():
     garbage_frames = get_all_files_in_folder("frames/garbage")
     return garbage_frames
 
 
 async def sleep(tics=0):
+    tics = tics or 0
     for _ in range(tics):
         await asyncio.sleep(0)
 
 
-def show_game_over(canvas):
-    game_over_frame = read_file("frames/game_over.txt")
+async def show_game_over(canvas):
+    game_over_frame = get_game_over_frame()
     max_x, max_y = curses.window.getmaxyx(canvas)
     frame_x, frame_y = get_frame_size(game_over_frame)
     center_x, center_y = get_center_xy(max_x, max_y)
-    draw_frame(canvas, center_x - frame_x/2, center_y - frame_y/2,  game_over_frame)
+
+    while True:
+        draw_frame(canvas, center_x - frame_x / 2, center_y - frame_y / 2, game_over_frame)
+        await asyncio.sleep(0)
 
 
 async def blink(canvas, row, column, symbol='*'):
@@ -145,6 +157,7 @@ async def fire(canvas, start_row, start_column, rows_speed=-0.3, columns_speed=0
 
 
 def control_starship(canvas, current_row, current_column, frame):
+    global GAME_OVER
     rows_direction, columns_direction, space_pressed = read_controls(canvas)
 
     frame_row, frame_column = get_frame_size(frame)
@@ -163,8 +176,8 @@ def control_starship(canvas, current_row, current_column, frame):
 
     for obstacle in OBSTACLES:
         if obstacle.has_collision(new_row, new_column, frame_row, frame_column):
-            show_game_over(canvas)
-            return *curses.window.getmaxyx(canvas), False
+            GAME_OVER = True
+            return new_row, new_column, space_pressed
 
     return new_row, new_column, space_pressed
 
@@ -173,16 +186,44 @@ async def animate_spaceship(canvas, current_row, current_column):
     for frame in cycle(item for item in get_starship_frames() for _ in range(2)):
         draw_frame(canvas, current_row, current_column, frame)
         await asyncio.sleep(0)
-
         new_row, new_column, space_pressed = control_starship(canvas, current_row, current_column, frame)
         draw_frame(canvas, current_row, current_column, frame, negative=True)
+
+        if GAME_OVER:
+            await explode(canvas, current_row, current_column)
+            await show_game_over(canvas)
+            break
+
         current_row, current_column = new_row, new_column
 
-        if space_pressed:
+        if space_pressed and YEAR >= 2020:
             _, colum_size = get_frame_size(frame)
             ship_columns_center = int(colum_size / 2)
             COROUTINES.extend(
                 [fire(canvas, start_row=current_row, start_column=current_column + ship_columns_center, rows_speed=-2)])
+
+
+def print_current_year(canvas):
+    max_x, max_y = curses.window.getmaxyx(canvas)
+    sub_canvas = canvas.derwin(max_x - 4, max_y - 50)
+    sub_canvas.border()
+    sub_canvas.addstr(1, 1, str(f" YEAR {YEAR}"))
+    sub_canvas.addstr(2, 1, str(f" {PHRASES.get(YEAR, '')}"))
+
+
+async def years_counter(canvas):
+    global YEAR
+    while True:
+        await sleep(tics=5)
+        if not GAME_OVER:
+            YEAR += 1
+        print_current_year(canvas)
+
+
+def game_speed_control():
+    global YEAR
+    delay_tics = get_garbage_delay_tics(YEAR)
+    return delay_tics
 
 
 async def fly_garbage(canvas, column, garbage_frame, speed=0.5):
@@ -222,12 +263,16 @@ async def fill_orbit_with_garbage(canvas):
     _, max_y = curses.window.getmaxyx(canvas)
     garbage_frames = get_garbage_frames()
     while True:
+        tics = game_speed_control()
+        await sleep(tics=tics)
+        if tics is None:
+            await asyncio.sleep(0)
+            continue
+
         column = get_random_column(max_y)
         garbage_frame = random.choice(garbage_frames)
-        COROUTINES.extend([fly_garbage(canvas, column=column, garbage_frame=garbage_frame)])
-        # COROUTINES.extend([show_obstacles(canvas, OBSTACLES)])
 
-        await sleep(tics=5)
+        COROUTINES.extend([fly_garbage(canvas, column=column, garbage_frame=garbage_frame)])
 
 
 def draw(canvas):
@@ -240,6 +285,7 @@ def draw(canvas):
     COROUTINES.extend([blink(canvas, *get_random_xy(max_x, max_y), get_random_star()) for _ in range(STARS_COUNT)])
     COROUTINES.extend([animate_spaceship(canvas, *get_center_xy(max_x, max_y))])
     COROUTINES.extend([fill_orbit_with_garbage(canvas)])
+    COROUTINES.extend([years_counter(canvas)])
 
     while COROUTINES:
         for coroutine in COROUTINES.copy():
